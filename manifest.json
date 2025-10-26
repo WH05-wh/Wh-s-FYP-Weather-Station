@@ -1,15 +1,29 @@
 {
   "name": "ESP32 Weather Station",
-  "short_name": "ESP32Weather",
-  "description": "ESP32 Weather Station Dashboard - PWA with push notifications",
-  "start_url": "/index.html",
+  "short_name": "WeatherStation",
+  "start_url": "/Wh-s-FYP-Weather-Station/index.html",
+  "scope": "/Wh-s-FYP-Weather-Station/",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#4fc3f7",
+  "description": "Monitor temperature, humidity, pressure, rain, and wind data in real time using your ESP32 IoT weather station.",
   "orientation": "portrait",
-  "scope": "/",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
