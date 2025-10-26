@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#4fc3f7">
+  <meta charset="UTF-8">
+  <title>ESP32 Weather Station</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #121212;
+      color: #e0e0e0;
+      text-align: center;
+      padding: 30px;
+      transition: background 0.5s, color 0.5s;
+    }
+    h1 { color: inherit; }
+    .status-card {
+      display: inline-block;
+      margin: 10px 0 20px 0;
+      padding: 10px 20px;
+      border-radius: 12px;
+      background: #1e1e1e;
+      color: inherit;
+      font-size: 20px;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+    .card {
+      display: inline-block;
+      width: 220px;
+      margin: 15px;
+      padding: 20px;
+      border-radius: 12px;
+      background: #1e1e1e;
+      color: inherit;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+    .value {
+      font-size: 24px;
+      margin-top: 10px;
+      color: #4fc3f7;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    canvas {
+      margin-top: 20px;
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 15px;
+    }
+    .buttons { margin: 20px; }
+    button {
+      margin: 8px;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .toggle-btn { background: #4fc3f7; color: #000; }
+    .csv-btn { background: #81c784; color: #000; }
+
+    /* ✅ Light Mode Styles */
+    .light-mode {
+      background: #f5f5f5;
+      color: #000;
+    }
+    .light-mode .status-card,
+    .light-mode .card,
+    .light-mode canvas {
+      background: #ffffff;
+      color: #000;
+    }
+  </style>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dark-mode">
+  <h1>ESP32 Weather Station Dashboard</h1>
+
+  <!-- ESP32 Status -->
+  <div class="status-card" id="espStatusCard">
+    <span class="status-dot" id="espDot" style="background:red;"></span>
+    <span>ESP32 Status: </span><span class="value" id="espStatus">Offline</span>
+  </div>
+
+  <div class="buttons">
+    <button class="toggle-btn" onclick="toggleDarkMode()">🌗 Toggle Dark Mode</button>
+    <button class="csv-btn" onclick="downloadCSV()">⬇️ Download CSV</button>
+    <button class="csv-btn" onclick="testRain()">🌧 Test Rain</button>
+    <button id="installBtn" class="toggle-btn" style="display:none">⬇️ Install App</button>
+  </div>
+
+  <!-- ✅ Install App Button -->
+  <div style="text-align:center; margin-top:20px;">
+    <button id="installButton" style="
+        background-color:#0078D7;
+        color:white;
+        border:none;
+        padding:10px 20px;
+        border-radius:8px;
+        font-size:16px;
+        cursor:pointer;
+        display:none;
+    ">
+      📲 Install App
+    </button>
+  </div>
+
+  <!-- Sensor Cards -->
+  <div class="card"><h3>Temperature</h3><div class="value" id="temp">-- °C</div></div>
+  <div class="card"><h3>Humidity</h3><div class="value" id="hum">-- %</div></div>
+  <div class="card"><h3>Pressure</h3><div class="value" id="pressure">-- hPa</div></div>
+  <div class="card"><h3>Rain</h3><div class="value" id="rain">--</div></div>
+  <div class="card"><h3>Rain Duration</h3><div class="value" id="rainDuration">-- min in last 30 min</div></div>
+  <div class="card"><h3>Wind Speed</h3><div class="value" id="windspeed">-- m/s</div></div>
+
+  <!-- Charts -->
+  <canvas id="tempChart" width="400" height="200"></canvas>
+  <canvas id="humChart" width="400" height="200"></canvas>
+  <canvas id="windChart" width="400" height="200"></canvas>
+  <canvas id="pressureChart" width="400" height="200"></canvas>
+
+<script>
+  const broker = "wss://broker.hivemq.com:8884/mqtt";
+  const clientId = "ESP32Dashboard-" + Math.random().toString(16).substr(2, 8);
+  const client = mqtt.connect(broker, { clientId });
+
+  let latestTemp = null, latestHum = null, latestWind = null, latestPressure = null;
+  let latestRain = null;
+  let chartData = { time: [], temp: [], hum: [], wind: [], pressure: [], rain: [] };
+  let rainTimestamps = [];
+  const MAX_POINTS = 180;
+
+  // ---- Notification Setup ----
+  if ("Notification" in window && Notification.permission !== "granted") {
+    Notification.requestPermission();
+  }
+
+  function sendRainNotification() {
+    if (Notification.permission === "granted") {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        reg.showNotification("🌧 Rain Started", {
+          body: "It's raining now! Please take action.",
+          icon: "icons/icon-192.png",
+          vibrate: [200, 100, 200],
+          tag: "rain-alert"
+        });
+      });
+    } else {
+      Notification.requestPermission();
+    }
+  }
+
+  function sendRainStoppedNotification() {
+    if (Notification.permission === "granted") {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        reg.showNotification("☀️ Rain Stopped", {
+          body: "The rain has stopped. Weather is clear now!",
+          icon: "icons/icon-192.png",
+          vibrate: [100, 50, 100],
+          tag: "rain-stopped"
+        });
+      });
+    } else {
+      Notification.requestPermission();
+    }
+  }
+
+  // ✅ New: High Humidity Notification
+  function sendHumidityNotification(value) {
+    if (Notification.permission === "granted") {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        reg.showNotification("💧 High Humidity Alert", {
+          body: `Humidity is very high (${value}%).`,
+          icon: "icons/icon-192.png",
+          vibrate: [150, 75, 150],
+          tag: "humidity-alert"
+        });
+      });
+    } else {
+      Notification.requestPermission();
+    }
+  }
+
+  function sendRainEmail() {
+    fetch("https://wh-weather-station.onrender.com/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject: "🌧 Rain Detected!",
+        message: "Rain has been detected by the ESP32 Weather Station."
+      })
+    })
+    .then(res => res.text())
+    .then(data => console.log("✅ Email Response:", data))
+    .catch(err => console.error("❌ Email Error:", err));
+  }
+
+  function testRain() {
+    document.getElementById("rain").innerText = "🌧 Yes (Test)";
+    latestRain = 1;
+    sendRainNotification();
+    sendRainEmail();
+    console.log("✅ Test Rain triggered manually");
+
+    const btn = document.querySelector("button[onclick='testRain()']");
+    btn.disabled = true;
+    btn.innerText = "🌧 Testing...";
+
+    setTimeout(() => {
+      document.getElementById("rain").innerText = "☀️ No (Normal)";
+      latestRain = 0;
+      console.log("☀️ Test Rain reset back to normal");
+
+      btn.disabled = false;
+      btn.innerText = "🌧 Test Rain";
+    }, 5000);
+  }
+
+  function createChart(ctx, label, color) {
+    return new Chart(ctx, {
+      type: "line",
+      data: { labels: [], datasets: [{ label, data: [], borderColor: color, fill: true, backgroundColor: color+"33" }] },
+      options: { responsive: true, animation: false, scales: { y: { beginAtZero: true } } }
+    });
+  }
+
+  const tempChart = createChart(document.getElementById("tempChart"), "Temperature (°C)", "#ff5252");
+  const humChart = createChart(document.getElementById("humChart"), "Humidity (%)", "#4fc3f7");
+  const windChart = createChart(document.getElementById("windChart"), "Wind Speed (m/s)", "#81c784");
+  const pressureChart = createChart(document.getElementById("pressureChart"), "Pressure (hPa)", "#ba68c8");
+
+  client.on("connect", () => {
+    updateESPStatus(true);
+    client.subscribe("esp32/temp");
+    client.subscribe("esp32/hum");
+    client.subscribe("esp32/pressure");
+    client.subscribe("esp32/rain");
+    client.subscribe("esp32/windspeed");
+    client.subscribe("esp32/winddir");
+  });
+  client.on("close", () => updateESPStatus(false));
+
+  client.on("message", (topic, message) => {
+    const value = message.toString();
+    switch (topic) {
+      case "esp32/temp":
+        latestTemp = parseFloat(value);
+        document.getElementById("temp").innerText = value+" °C";
+        break;
+
+      case "esp32/hum":
+        latestHum = parseFloat(value);
+        document.getElementById("hum").innerText = value+" %";
+
+        // ✅ Notify only when humidity > 95%
+        if (latestHum > 95) {
+          console.log("💧 High humidity detected! Sending notification...");
+          sendHumidityNotification(latestHum);
+        }
+        break;
+
+      case "esp32/pressure":
+        latestPressure = parseFloat(value);
+        document.getElementById("pressure").innerText = value+" hPa";
+        break;
+
+      case "esp32/rain":
+        const previousRain = latestRain;
+        const isRaining = (value == "0");
+
+        document.getElementById("rain").innerText = isRaining ? "🌧 Yes" : "☀️ No";
+        latestRain = isRaining ? 1 : 0;
+
+        if (isRaining && previousRain !== 1) {
+          console.log("🌧 Rain started! Sending notification...");
+          sendRainNotification();
+        } else if (!isRaining && previousRain === 1) {
+          console.log("☀️ Rain stopped! Sending notification...");
+          sendRainStoppedNotification();
+        }
+        break;
+
+      case "esp32/windspeed":
+        latestWind = parseFloat(value);
+        document.getElementById("windspeed").innerText = value+" m/s";
+        break;
+
+      case "esp32/winddir":
+        document.getElementById("winddir").innerText = value+" °";
+        break;
+    }
+  });
+
+  function saveHistory(key, chart) {
+    localStorage.setItem(key, JSON.stringify({
+      labels: chart.data.labels,
+      data: chart.data.datasets[0].data
+    }));
+  }
+
+  function loadHistory(key, chart) {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      chart.data.labels = parsed.labels || [];
+      chart.data.datasets[0].data = parsed.data || [];
+      chart.update();
+    }
+  }
+
+  setInterval(() => {
+    const now = new Date().toLocaleTimeString();
+    function updateChart(chart, value, key) {
+      chart.data.labels.push(now);
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.labels.length > MAX_POINTS) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update();
+      saveHistory(key, chart);
+    }
+
+    if (latestTemp!==null) updateChart(tempChart, latestTemp, "tempHistory");
+    if (latestHum!==null) updateChart(humChart, latestHum, "humHistory");
+    if (latestWind!==null) updateChart(windChart, latestWind, "windHistory");
+    if (latestPressure!==null) updateChart(pressureChart, latestPressure, "pressureHistory");
+
+    if (latestRain===1) rainTimestamps.push(new Date());
+    updateRainDuration();
+  }, 5000);
+
+  function updateESPStatus(online) {
+    const statusEl=document.getElementById("espStatus");
+    const dotEl=document.getElementById("espDot");
+    if (online) { statusEl.innerText="Online"; dotEl.style.background="green"; }
+    else { statusEl.innerText="Offline"; dotEl.style.background="red"; }
+  }
+
+  function updateRainDuration() {
+    const now=new Date();
+    const THIRTY_MIN=30*60*1000;
+    rainTimestamps=rainTimestamps.filter(ts => now-ts<=THIRTY_MIN);
+    const rainDuration=rainTimestamps.length*5/60;
+    document.getElementById("rainDuration").innerText=`${Math.round(rainDuration)} min in last 30 min`;
+  }
+
+  function downloadCSV() {
+    let csv="Time,Temperature,Humidity,Wind,Pressure,Rain\n";
+    const len=tempChart.data.labels.length;
+    for (let i=0;i<len;i++) {
+      csv+=`${tempChart.data.labels[i]},${tempChart.data.datasets[0].data[i]||""},${humChart.data.datasets[0].data[i]||""},${windChart.data.datasets[0].data[i]||""},${pressureChart.data.datasets[0].data[i]||""},${latestRain||""}\n`;
+    }
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download="weather_history.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ✅ Dark Mode Toggle
+  function toggleDarkMode() {
+    document.body.classList.toggle("light-mode");
+    if (document.body.classList.contains("light-mode")) {
+      localStorage.setItem("theme", "light");
+    } else {
+      localStorage.setItem("theme", "dark");
+    }
+  }
+
+  // ✅ Restore on Page Load
+  window.onload=()=> {
+    loadHistory("tempHistory", tempChart);
+    loadHistory("humHistory", humChart);
+    loadHistory("windHistory", windChart);
+    loadHistory("pressureHistory", pressureChart);
+
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "light") {
+      document.body.classList.add("light-mode");
+    }
+  };
+</script>
+
+<script>
+/* PWA install + push subscription (same as before, no changes) */
+
+const BRIDGE_URL = 'http://localhost:3001';
+const VAPID_PUBLIC_KEY = 'BBiul0FRmUT8rMriHAofq--doFLEkOsEzzn6RYFXo1_mBBRSbnaabHbUwqYeO1kXc1MgC8jh64P4zddWfTcEukc';
+const installButton = document.getElementById('installButton');
+const installBtn = document.getElementById('installBtn');
+let deferredPrompt = null;
+
+function showToast(message) {
+  const id = 'pwa-toast';
+  const old = document.getElementById(id);
+  if (old) old.remove();
+  const t = document.createElement('div');
+  t.id = id;
+  t.textContent = message;
+  Object.assign(t.style, {
+    position: 'fixed', bottom: '24px', right: '24px',
+    background: '#1f8feb', color: '#fff', padding: '10px 14px',
+    borderRadius: '8px', zIndex: 99999, boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+    fontSize: '14px', opacity: 0, transition: 'opacity 0.25s'
+  });
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.style.opacity = 1);
+  setTimeout(() => { t.style.opacity = 0; setTimeout(()=>t.remove(),300); }, 3000);
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (installButton) installButton.style.display = 'inline-block';
+  if (installBtn) installBtn.style.display = 'inline-block';
+});
+
+async function promptInstall(buttonEl) {
+  if (!deferredPrompt) return;
+  try {
+    buttonEl.style.display = 'none';
+    deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice;
+    console.log('PWA install choice:', choice.outcome);
+    if (choice.outcome === 'accepted') showToast('✅ App installed successfully!');
+  } catch (err) {
+    console.error('Install prompt error', err);
+  } finally {
+    deferredPrompt = null;
+  }
+}
+
+if (installButton) installButton.addEventListener('click', () => promptInstall(installButton));
+if (installBtn) installBtn.addEventListener('click', () => promptInstall(installBtn));
+
+window.addEventListener('appinstalled', () => {
+  console.log('PWA installed');
+  if (installButton) installButton.style.display = 'none';
+  if (installBtn) installBtn.style.display = 'none';
+  showToast('✅ App installed');
+});
+
+async function registerServiceWorkerAndSubscribe() {
+  try {
+    const reg = await navigator.serviceWorker.register('/service-worker.js');
+    console.log('ServiceWorker registered:', reg.scope);
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+    console.log('Push subscribed:', sub);
+    await fetch(`${BRIDGE_URL}/subscribe`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(sub)
+    });
+  } catch (err) {
+    console.error('SW/Push error', err);
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+if ('serviceWorker' in navigator && 'PushManager' in window) {
+  registerServiceWorkerAndSubscribe();
+}
+</script>
+
+</body>
+</html>
