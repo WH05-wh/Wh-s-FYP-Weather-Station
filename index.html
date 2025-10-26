@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="favicon.ico">
   <meta name="theme-color" content="#4fc3f7">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-</head>
   <title>ESP32 Weather Station</title>
-  
+</head> 
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -457,7 +457,7 @@ window.addEventListener('appinstalled', () => {
 
 async function registerServiceWorkerAndSubscribe() {
   try {
-    const reg = await navigator.serviceWorker.register('/service-worker.js');
+    const reg = await navigator.serviceWorker.register('./service-worker.js');
     console.log('ServiceWorker registered:', reg.scope);
 
     const sub = await reg.pushManager.subscribe({
@@ -499,4 +499,5 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
 
