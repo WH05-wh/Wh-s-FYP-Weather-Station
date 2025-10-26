@@ -107,24 +107,23 @@
     <button class="toggle-btn" onclick="toggleDarkMode()">🌗 Toggle Dark Mode</button>
     <button class="csv-btn" onclick="downloadCSV()">⬇️ Download CSV</button>
     <button class="csv-btn" onclick="testRain()">🌧 Test Rain</button>
-    <button id="installBtn" class="toggle-btn" style="display:none">⬇️ Install App</button>
   </div>
 
-  <!-- ✅ Install App Button -->
-  <div style="text-align:center; margin-top:20px;">
-    <button id="installButton" style="
-        background-color:#0078D7;
-        color:white;
-        border:none;
-        padding:10px 20px;
-        border-radius:8px;
-        font-size:16px;
-        cursor:pointer;
-        display:none;
+  <div class="install-container">
+  <button id="installButton"
+    style="
+      background-color:#0078D7;
+      color:white;
+      border:none;
+      padding:10px 20px;
+      border-radius:8px;
+      font-size:16px;
+      cursor:pointer;
+      display:none;
     ">
-      📲 Install App
-    </button>
-  </div>
+    📲 Install App
+  </button>
+</div>
 
   <!-- Sensor Cards -->
   <div class="card"><h3>Temperature</h3><div class="value" id="temp">-- °C</div></div>
@@ -433,6 +432,7 @@
   </script>
 </body>
 </html>
+
 
 
 
