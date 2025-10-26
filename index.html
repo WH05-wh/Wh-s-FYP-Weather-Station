@@ -1,13 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="favicon.ico">
-  <meta name="theme-color" content="#4fc3f7">
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Weather Station</title>
+
+  <!-- Manifest for PWA -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Icons -->
+  <link rel="icon" href="icons/icon-192.png" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-512.png" />
+
+  <meta name="theme-color" content="#2c3e50" />
+  <meta name="description" content="ESP32 IoT Weather Monitoring Station" />
   <title>ESP32 Weather Station</title>
 </head> 
   <style>
@@ -396,120 +402,38 @@
   };
 </script>
 
-<script>
-/* PWA install + push subscription (same as before, no changes) */
-
-const BRIDGE_URL = 'http://localhost:3001';
-const VAPID_PUBLIC_KEY = 'BBiul0FRmUT8rMriHAofq--doFLEkOsEzzn6RYFXo1_mBBRSbnaabHbUwqYeO1kXc1MgC8jh64P4zddWfTcEukc';
-const installButton = document.getElementById('installButton');
-const installBtn = document.getElementById('installBtn');
-let deferredPrompt = null;
-
-function showToast(message) {
-  const id = 'pwa-toast';
-  const old = document.getElementById(id);
-  if (old) old.remove();
-  const t = document.createElement('div');
-  t.id = id;
-  t.textContent = message;
-  Object.assign(t.style, {
-    position: 'fixed', bottom: '24px', right: '24px',
-    background: '#1f8feb', color: '#fff', padding: '10px 14px',
-    borderRadius: '8px', zIndex: 99999, boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-    fontSize: '14px', opacity: 0, transition: 'opacity 0.25s'
-  });
-  document.body.appendChild(t);
-  requestAnimationFrame(() => t.style.opacity = 1);
-  setTimeout(() => { t.style.opacity = 0; setTimeout(()=>t.remove(),300); }, 3000);
-}
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  if (installButton) installButton.style.display = 'inline-block';
-  if (installBtn) installBtn.style.display = 'inline-block';
-});
-
-async function promptInstall(buttonEl) {
-  if (!deferredPrompt) return;
-  try {
-    buttonEl.style.display = 'none';
-    deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
-    console.log('PWA install choice:', choice.outcome);
-    if (choice.outcome === 'accepted') showToast('✅ App installed successfully!');
-  } catch (err) {
-    console.error('Install prompt error', err);
-  } finally {
-    deferredPrompt = null;
-  }
-}
-
-if (installButton) installButton.addEventListener('click', () => promptInstall(installButton));
-if (installBtn) installBtn.addEventListener('click', () => promptInstall(installBtn));
-
-window.addEventListener('appinstalled', () => {
-  console.log('PWA installed');
-  if (installButton) installButton.style.display = 'none';
-  if (installBtn) installBtn.style.display = 'none';
-  showToast('✅ App installed');
-});
-
-async function registerServiceWorkerAndSubscribe() {
-  try {
-    const reg = await navigator.serviceWorker.register('./service-worker.js');
-    console.log('ServiceWorker registered:', reg.scope);
-
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-    });
-    console.log('Push subscribed:', sub);
-    await fetch(`${BRIDGE_URL}/subscribe`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(sub)
-    });
-  } catch (err) {
-    console.error('SW/Push error', err);
-  }
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
-<script>
-async function registerServiceWorkerAndSubscribe() {
-  if ("serviceWorker" in navigator) {
-    try {
-      const registration = await navigator.serviceWorker.register(
-        "./service-worker.js",  
-        { scope: "./" }          
-      );
-      console.log("✅ ServiceWorker registered:", registration.scope);
-    } catch (error) {
-      console.error("❌ ServiceWorker registration failed:", error);
+<!-- === PWA: Service Worker & Install Button === -->
+  <script>
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js', { scope: './' })
+          .then(reg => console.log('✅ Service Worker registered:', reg.scope))
+          .catch(err => console.error('❌ SW registration failed:', err));
+      });
     }
-  } else {
-    console.warn("ServiceWorker not supported in this browser.");
-  }
-}
 
-window.addEventListener("load", registerServiceWorkerAndSubscribe);
-</script>
+    // Install Button logic
+    let deferredPrompt;
+    const installButton = document.getElementById('installButton');
 
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installButton.style.display = 'block';
+    });
 
+    installButton.addEventListener('click', async () => {
+      installButton.style.display = 'none';
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      console.log("PWA install choice:", choice.outcome);
+      deferredPrompt = null;
+    });
+  </script>
 </body>
 </html>
+
 
 
 
